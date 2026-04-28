@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-04-28
+
+### Fixed (the actual actual fix)
+
+- **No longer wraps `CPRCombat.rollInitiative`.** The v0.2.0 wrap was the proximate cause of the `TypeError: Cannot read properties of null (reading 'constructor')` crash inside `cpr-combat.js:72`. The wrap inserted an extra `await` boundary at the entry of `rollInitiative` that exposed a latent CPR bug where `combatant.token.actor` could resolve to `null` for synthetic-token combatants whose actor materialization was still in flight at the read site.
+- **Module no longer touches `rollInitiative` at all.** It is byte-for-byte invisible to CPR's combat code path.
+- **Detection now uses stack-trace inspection at the DSN entry point.** When `game.dice3d.showForRoll` or `.show` is called, the module checks the JS call stack for `rollInitiative` / `rollAll` / `rollNPC` markers. If any are present, returns `false` (DSN's "did not animate" convention) without triggering animation.
+- **Registration moved from `Hooks.once("ready")` to `Hooks.once("diceSoNiceReady")`.** v0.2.0 could fail silently if our `ready` hook ran before DSN's, leaving `game.dice3d` undefined and our `libWrapper.register("game.dice3d.showForRoll", …)` throwing. Now we register only after DSN signals it is fully initialized.
+- **Removed `if (!game.user?.isGM) return;` guard at the top of registration.** v0.2.0 only installed wraps on GM clients; player clients still saw 3D animation. The wraps now install on every connected client.
+
+### Migration from v0.2.0
+
+Direct upgrade. No settings changed. No new dependencies.
+
 ## [0.2.0] - 2026-04-28
 
 ### Fixed (this is the actual fix)
