@@ -1,0 +1,9 @@
+{
+  "CPR_FAST_INIT.Settings.Enabled.Name": "Skip 3D dice for initiative",
+  "CPR_FAST_INIT.Settings.Enabled.Hint": "When enabled, initiative rolls in Cyberpunk Red Core skip Dice So Nice's 3D animation. Other rolls keep their animation. Per-client setting - each player can configure independently.",
+
+  "CPR_FAST_INIT.Settings.MatchByFlavor.Name": "Match by flavor (fallback)",
+  "CPR_FAST_INIT.Settings.MatchByFlavor.Hint": "Optional. If your initiative rolls do not set the standard `flags.core.initiativeRoll` flag, also match chat messages whose flavor contains the word \"initiative\" (case-insensitive). Leave off unless the standard flag detection misses your initiative rolls.",
+
+  "CPR_FAST_INIT.Notification.DSNMissing": "CPR Fast Initiative requires Dice So Nice. Please install and activate it."
+}

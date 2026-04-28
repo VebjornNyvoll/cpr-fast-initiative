@@ -1,0 +1,34 @@
+{
+  "id": "cpr-fast-initiative",
+  "title": "CPR Fast Initiative",
+  "description": "Skips Dice So Nice 3D dice animation for initiative rolls in the Cyberpunk Red Core system. Other rolls (attacks, skill checks, damage) keep their 3D animation. Speeds up combat tracker startup without losing 3D dice flavor elsewhere.",
+  "version": "#{VERSION}#",
+  "compatibility": {
+    "minimum": "12",
+    "verified": "13",
+    "maximum": ""
+  },
+  "authors": [
+    { "name": "Vebjørn Nyvoll", "email": "vebjorn.nyvoll@gmail.com" }
+  ],
+  "esmodules": ["scripts/module.mjs"],
+  "languages": [
+    { "lang": "en", "name": "English", "path": "lang/en.json" }
+  ],
+  "relationships": {
+    "systems": [
+      { "id": "cyberpunk-red-core", "type": "system" }
+    ],
+    "requires": [
+      { "id": "dice-so-nice", "type": "module" }
+    ]
+  },
+  "url":      "#{URL}#",
+  "manifest": "#{MANIFEST}#",
+  "download": "#{DOWNLOAD}#",
+  "license": "LICENSE",
+  "readme": "README.md",
+  "bugs": "",
+  "changelog": "",
+  "flags": {}
+}
