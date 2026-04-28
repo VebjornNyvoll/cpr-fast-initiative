@@ -19,7 +19,7 @@ Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "enabled", {
     name:    "CPR_FAST_INIT.Settings.Enabled.Name",
     hint:    "CPR_FAST_INIT.Settings.Enabled.Hint",
-    scope:   "client",
+    scope:   "world",
     config:  true,
     type:    Boolean,
     default: true
@@ -28,7 +28,7 @@ Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "matchByFlavor", {
     name:    "CPR_FAST_INIT.Settings.MatchByFlavor.Name",
     hint:    "CPR_FAST_INIT.Settings.MatchByFlavor.Hint",
-    scope:   "client",
+    scope:   "world",
     config:  true,
     type:    Boolean,
     default: false
