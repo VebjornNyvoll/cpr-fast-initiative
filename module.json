@@ -20,7 +20,8 @@
       { "id": "cyberpunk-red-core", "type": "system" }
     ],
     "requires": [
-      { "id": "dice-so-nice", "type": "module" }
+      { "id": "dice-so-nice", "type": "module" },
+      { "id": "lib-wrapper",  "type": "module" }
     ]
   },
   "url":      "#{URL}#",

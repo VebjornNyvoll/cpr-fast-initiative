@@ -1,19 +1,36 @@
 // CPR Fast Initiative
 //
 // Suppresses Dice So Nice's 3D dice animation for initiative rolls in the
-// Cyberpunk Red Core system. Other rolls keep their animation.
+// Cyberpunk Red Core (cpr) system. Other rolls keep their animation.
 //
-// Implementation: hooks into DSN's `diceSoNiceMessagePreProcess` extension
-// hook (the canonical pre-decision seam) and sets `willTrigger3DRoll = false`
-// when the chat message is an initiative roll under the cpr system.
+// ── Why we use libWrapper, not just a hook ────────────────────────────────
 //
-// No monkey-patching, no libWrapper. Pure hook-based extension.
+// CPR rolls initiative through its own DiceHandler.handle3dDice helper, which
+// calls game.dice3d.showForRoll DIRECTLY, before any chat message is created.
+// DSN's `diceSoNiceMessagePreProcess` hook fires only during DSN's chat-
+// message interception path, which CPR never enters for initiative. So the
+// "use the DSN hook" approach (v0.1.x) silently never fired.
+//
+// Correct interception point = game.dice3d.showForRoll itself. We must skip
+// it only while inside CPRCombat.rollInitiative; other CPR rolls (attacks,
+// skill checks, damage) must still animate. So we wrap two things with
+// libWrapper:
+//
+//   1. CONFIG.Combat.documentClass.prototype.rollInitiative
+//      ↳ flag _skipDsnForInit = true for the duration of execution.
+//   2. game.dice3d.showForRoll / .show
+//      ↳ when the flag is set, return false immediately (DSN's "did not
+//        animate" convention) instead of triggering the 3D animation.
+//
+// Pure libWrapper-managed wrapping. No monkey-patching, conflict-aware.
 
-const MODULE_ID = "cpr-fast-initiative";
+const MODULE_ID     = "cpr-fast-initiative";
 const TARGET_SYSTEM = "cyberpunk-red-core";
 
+let _skipDsnForInit = false;
+
 // ---------------------------------------------------------------------------
-// Settings
+// Settings (world-scope — GM only)
 
 Hooks.once("init", () => {
   game.settings.register(MODULE_ID, "enabled", {
@@ -24,75 +41,62 @@ Hooks.once("init", () => {
     type:    Boolean,
     default: true
   });
-
-  game.settings.register(MODULE_ID, "matchByFlavor", {
-    name:    "CPR_FAST_INIT.Settings.MatchByFlavor.Name",
-    hint:    "CPR_FAST_INIT.Settings.MatchByFlavor.Hint",
-    scope:   "world",
-    config:  true,
-    type:    Boolean,
-    default: false
-  });
 });
 
 // ---------------------------------------------------------------------------
-// Initiative-roll detection
-
-/**
- * Is this chat message an initiative roll?
- *
- * Primary signal: `flags.core.initiativeRoll === true`. Foundry core sets this
- * automatically when `Combat#rollInitiative` creates the chat message. Most
- * systems including CPR use the standard combat-tracker flow.
- *
- * Optional fallback signal (off by default): the message's flavor matches
- * /initiative/i. Enable via the "Match by flavor" setting if your CPR setup
- * uses a custom roll that doesn't set the standard flag.
- *
- * @param {ChatMessage} message
- * @returns {boolean}
- */
-function isInitiativeRoll(message) {
-  if (!message) return false;
-
-  // Primary: Foundry's standard initiative-roll flag
-  if (message.flags?.core?.initiativeRoll === true) return true;
-
-  // Fallback: flavor match (opt-in)
-  if (game.settings.get(MODULE_ID, "matchByFlavor")) {
-    const flavor = (message.flavor ?? "").toString();
-    if (/initiative/i.test(flavor)) return true;
-  }
-
-  return false;
-}
-
-// ---------------------------------------------------------------------------
-// DSN extension hook
-
-Hooks.on("diceSoNiceMessagePreProcess", (messageId, interception) => {
-  if (!game.settings.get(MODULE_ID, "enabled")) return;
-  if (game.system.id !== TARGET_SYSTEM) return;
-  if (!interception?.willTrigger3DRoll) return;        // already suppressed by something else
-
-  const message = game.messages.get(messageId);
-  if (!isInitiativeRoll(message)) return;
-
-  interception.willTrigger3DRoll = false;
-});
-
-// ---------------------------------------------------------------------------
-// One-time GM warning if dependencies are missing
+// libWrapper registration at ready
 
 Hooks.once("ready", () => {
   if (!game.user?.isGM) return;
 
+  // No-op on any non-CPR system.
   if (game.system.id !== TARGET_SYSTEM) {
-    console.warn(`${MODULE_ID} | Active system is "${game.system.id}". This module only acts on "${TARGET_SYSTEM}" — it will be a no-op until you load a CPR world.`);
+    console.warn(`${MODULE_ID} | Active system is "${game.system.id}". This module only acts on "${TARGET_SYSTEM}".`);
+    return;
+  }
+
+  if (!game.modules.get("lib-wrapper")?.active) {
+    ui.notifications.error(game.i18n.localize("CPR_FAST_INIT.Notification.LibWrapperMissing"));
     return;
   }
 
   if (!game.modules.get("dice-so-nice")?.active) {
     ui.notifications.warn(game.i18n.localize("CPR_FAST_INIT.Notification.DSNMissing"));
+    return;
   }
+
+  // ── Wrapper 1: flag the rollInitiative call window ────────────────────
+  libWrapper.register(
+    MODULE_ID,
+    "CONFIG.Combat.documentClass.prototype.rollInitiative",
+    async function (wrapped, ...args) {
+      if (!game.settings.get(MODULE_ID, "enabled")) {
+        return wrapped.apply(this, args);
+      }
+      _skipDsnForInit = true;
+      try {
+        return await wrapped.apply(this, args);
+      } finally {
+        _skipDsnForInit = false;
+      }
+    },
+    "WRAPPER"
+  );
+
+  // ── Wrapper 2: skip DSN's animation while the flag is set ─────────────
+  // Both showForRoll (CPR's actual path) and show (defense in depth in case
+  // CPR ever switches to the lower-level entry point).
+  for (const path of ["game.dice3d.showForRoll", "game.dice3d.show"]) {
+    libWrapper.register(
+      MODULE_ID,
+      path,
+      async function (wrapped, ...args) {
+        if (_skipDsnForInit) return false;   // DSN convention: false = did not animate
+        return wrapped.apply(this, args);
+      },
+      "MIXED"
+    );
+  }
+
+  console.log(`${MODULE_ID} | Active — CPR initiative rolls will skip Dice So Nice 3D animation.`);
 });

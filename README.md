@@ -1,8 +1,8 @@
 # CPR Fast Initiative
 
-A small Foundry VTT module that **suppresses [Dice So Nice's](https://gitlab.com/riccisi/foundryvtt-dice-so-nice) 3D dice animation for initiative rolls** in the [Cyberpunk Red Core](https://gitlab.com/cyberpunk-red-team/fvtt-cyberpunk-red-core) system. Other rolls (attacks, skill checks, damage) keep their 3D animation. Speeds up combat-tracker startup without losing 3D dice flavor elsewhere.
+A Foundry VTT module that **suppresses [Dice So Nice's](https://gitlab.com/riccisi/foundryvtt-dice-so-nice) 3D dice animation for initiative rolls** in the [Cyberpunk Red Core](https://gitlab.com/cyberpunk-red-team/fvtt-cyberpunk-red-core) system. Other rolls (attacks, skill checks, damage) keep their 3D animation. Speeds up combat-tracker startup without losing 3D dice flavor elsewhere.
 
-> **Status: v0.1.0 — initial release.**
+> **Status: v0.2.0 — actually works.** v0.1.x had a wrong-path detection mechanism that never fired for CPR initiative. v0.2.0 intercepts the correct entry point via `lib-wrapper`. See [CHANGELOG.md](CHANGELOG.md) for details.
 
 ## Install
 
@@ -12,27 +12,29 @@ Paste this manifest URL into Foundry → *Add-on Modules → Install Module*:
 https://github.com/VebjornNyvoll/cpr-fast-initiative/releases/latest/download/module.json
 ```
 
-## Why
+You also need:
 
-Cyberpunk Red Core's combat tracker initiative rolls every combatant up front. With Dice So Nice enabled, the GM waits through one 3D dice animation per combatant before the encounter begins — typically 5-15 seconds of animation queue per fight. Disabling DSN globally for initiative loses the visual flair on every other roll for everyone.
+- [Dice So Nice](https://gitlab.com/riccisi/foundryvtt-dice-so-nice) (the thing we're selectively suppressing)
+- [lib-wrapper](https://github.com/ruipin/fvtt-lib-wrapper) (used to safely wrap CPR's `rollInitiative` and DSN's `showForRoll`)
 
-This module removes only the initiative-roll animation, leaving every other CPR roll (attacks, skill checks, damage, recovery, etc.) animated normally.
+Both are widely-used dependencies you may already have installed.
 
 ## How it works
 
-- Listens for the [`diceSoNiceMessagePreProcess`](https://gitlab.com/riccisi/foundryvtt-dice-so-nice) extension hook (DSN's canonical pre-decision seam).
-- Detects initiative rolls via Foundry's standard `flags.core.initiativeRoll === true` flag (set automatically by `Combat#rollInitiative`).
-- Sets `interception.willTrigger3DRoll = false` for matching messages, telling DSN to skip the animation.
-- The chat card itself appears immediately with the rolled total, no animation queue.
+CPR rolls initiative through its own `DiceHandler.handle3dDice` helper, which calls `game.dice3d.showForRoll` **directly**, before any chat message is created. DSN's normal extension hook (`diceSoNiceMessagePreProcess`) fires only in DSN's chat-message interception path — which CPR never enters for initiative. Hence we have to intercept at the actual call site.
 
-No monkey-patching, no `libWrapper`. Pure hook-based extension. Dormant on any other system.
+Mechanism:
 
-## Settings
+1. `lib-wrapper`-wraps `CONFIG.Combat.documentClass.prototype.rollInitiative` (which CPR overrides as `CPRCombat.rollInitiative`). For the duration of that call, sets a module-internal `_skipDsnForInit = true` flag inside a `try/finally`.
+2. `lib-wrapper`-wraps `game.dice3d.showForRoll` (and `game.dice3d.show` defensively). When invoked while the flag is set, returns `false` immediately (DSN's "did not animate" convention) instead of triggering the 3D animation.
 
-| Setting | Scope | Default | Description |
-|---|---|---|---|
-| Skip 3D dice for initiative | Client | `true` | Per-player toggle. Each player decides independently. |
-| Match by flavor (fallback) | Client | `false` | Opt-in fallback that also matches chat messages whose flavor contains "initiative" — only enable if the standard flag detection misses your initiative rolls. |
+The chat card still appears with the rolled total — only the 3D animation is suppressed. All non-initiative CPR rolls (attacks, skill checks, damage, recovery, etc.) animate normally.
+
+## Settings (world-scope, GM only)
+
+| Setting | Default | Description |
+|---|---|---|
+| Skip 3D dice for initiative | `true` | Master toggle. Set false to re-enable initiative animations without uninstalling the module. |
 
 ## Compatibility
 
@@ -40,7 +42,8 @@ No monkey-patching, no `libWrapper`. Pure hook-based extension. Dormant on any o
 |---|---|
 | Foundry VTT | v12 minimum, v13 verified |
 | System | `cyberpunk-red-core` (no-op on any other system) |
-| Required dependency | [Dice So Nice](https://gitlab.com/riccisi/foundryvtt-dice-so-nice) — module hard-requires DSN; if absent the module is meaningless |
+| Required: Dice So Nice | any recent version |
+| Required: lib-wrapper | any recent version |
 
 ## License
 

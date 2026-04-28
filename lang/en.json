@@ -5,5 +5,6 @@
   "CPR_FAST_INIT.Settings.MatchByFlavor.Name": "Match by flavor (fallback)",
   "CPR_FAST_INIT.Settings.MatchByFlavor.Hint": "Optional. If your initiative rolls do not set the standard `flags.core.initiativeRoll` flag, also match chat messages whose flavor contains the word \"initiative\" (case-insensitive). Leave off unless the standard flag detection misses your initiative rolls. World-scope setting - GM only.",
 
-  "CPR_FAST_INIT.Notification.DSNMissing": "CPR Fast Initiative requires Dice So Nice. Please install and activate it."
+  "CPR_FAST_INIT.Notification.DSNMissing": "CPR Fast Initiative requires Dice So Nice. Please install and activate it.",
+  "CPR_FAST_INIT.Notification.LibWrapperMissing": "CPR Fast Initiative requires the lib-wrapper module. Please install and activate it."
 }
