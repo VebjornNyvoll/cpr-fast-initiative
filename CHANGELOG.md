@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-04-28
+
+### Fixed (regression introduced in v0.2.1)
+
+- **Chat cards no longer disappear for non-initiative rolls during combat.** v0.2.1 used substring-match stack inspection (`stack.includes("rollAll")` and `"rollNPC"`), which produced false positives against any function whose name happened to contain those substrings — including DSN's own internal renderRolls path during chat-message processing for unrelated rolls. When that false match triggered, the wrap returned `false` to DSN, but DSN had already added the `dsn-hide` CSS class to the chat card. With no animation completion event firing, the card stayed permanently invisible.
+
+### Changed
+
+- **Use the `messageID` argument as the primary discriminator.** DSN's `showForRoll(roll, user, synchronize, users, blind, messageID, ...)` is called by DSN's chat-message interception path with a messageID set. CPR's direct call from `DiceHandler._passRoll` only passes 5 arguments (no messageID). If messageID is set, we now ALWAYS let the call through — DSN must complete its hide-and-reveal cycle so the chat card displays.
+- **Stack inspection narrowed** to `rollInitiative` only, and uses word-boundary regex `/\brollInitiative\b/` instead of substring `String.includes`. `rollAll` and `rollNPC` markers removed — Foundry's `Combat.rollAll` and `Combat.rollNPC` both delegate to `rollInitiative` internally, so the inner marker covers both paths.
+- **Removed wrap on `game.dice3d.show`.** CPR doesn't call it; the defense-in-depth wrap was unnecessary surface area and a potential source of more false positives.
+
+### Migration from v0.2.1
+
+Direct upgrade. No settings changed. No new dependencies.
+
 ## [0.2.1] - 2026-04-28
 
 ### Fixed (the actual actual fix)

@@ -8,36 +8,35 @@
 // CPR rolls initiative through its own DiceHandler.handle3dDice helper, which
 // calls game.dice3d.showForRoll DIRECTLY, before any chat message is created.
 // DSN's `diceSoNiceMessagePreProcess` hook fires only during DSN's chat-
-// message interception path, which CPR never enters for initiative. So a
-// hook-only approach (v0.1.x) never fired.
+// message interception path, which CPR never enters for initiative.
 //
-// v0.2.0 tried wrapping CPRCombat.rollInitiative AND game.dice3d.showForRoll.
-// That broke for two reasons: (1) wraps only installed on the GM client due
-// to an over-eager early-return guard; (2) wrapping rollInitiative inserted
-// an extra microtask boundary that exposed a latent CPR bug where a
-// synthetic-actor's `combatant.token.actor` could be null at the read site.
+// We wrap game.dice3d.showForRoll and decide whether to suppress based on TWO
+// things, in order:
 //
-// v0.2.1: do NOT wrap rollInitiative at all. Wrap ONLY game.dice3d.showForRoll
-// (and .show as defence-in-depth) and use stack-trace inspection at call
-// time to decide whether the call is initiative-driven. This makes us
-// completely invisible to CPR's rollInitiative — no wrap, no flag, no extra
-// async boundary. We only intercept DSN's own entry point.
+//   1. `messageID` argument (positional index 5).
+//      If it's set, this call comes from DSN's own renderRolls() driven by
+//      its createChatMessage hook — i.e. DSN is processing an existing chat
+//      message. We MUST let those calls through. DSN has already added the
+//      `dsn-hide` CSS class to the chat card and is depending on the
+//      animation-completion callback to remove it. If we return `false` here,
+//      the reveal never fires and the chat card stays invisible forever.
+//      This is what broke v0.2.1 for some users.
 //
-// We also register on DSN's `diceSoNiceReady` hook (which DSN fires after
-// fully initializing `game.dice3d`), guaranteeing our wraps are installed
-// at the correct time regardless of module load order.
+//   2. Otherwise (no messageID = direct call from somewhere): check the stack
+//      for `rollInitiative`. Foundry's Combat.rollAll and Combat.rollNPC both
+//      delegate to rollInitiative internally, so the inner marker covers both.
+//      We use a word-boundary regex (\brollInitiative\b) instead of substring
+//      matching to avoid catching unrelated names like rerollInitiative.
+//
+// We register the wrap on Hooks.once("diceSoNiceReady") to guarantee
+// game.dice3d is fully constructed regardless of module load order.
 
 const MODULE_ID     = "cpr-fast-initiative";
 const TARGET_SYSTEM = "cyberpunk-red-core";
 
-// Function names we treat as "this is an initiative roll" when seen in the
-// JS call stack. CPR's source is unminified by default, so its function names
-// appear as-is in stack frames.
-const INIT_STACK_MARKERS = [
-  "rollInitiative",   // CPRCombat.rollInitiative (and Foundry Combat.rollInitiative)
-  "rollAll",          // Combat.rollAll convenience that fans out to rollInitiative
-  "rollNPC",          // Combat.rollNPC convenience
-];
+// Word-boundary regex. Matches "rollInitiative" only when surrounded by
+// non-word characters (e.g. ".rollInitiative " in a stack frame).
+const INIT_MARKER = /\brollInitiative\b/;
 
 // ---------------------------------------------------------------------------
 // Settings — world-scope so only the GM can change them.
@@ -71,40 +70,43 @@ Hooks.once("diceSoNiceReady", () => {
   }
 
   if (!game.dice3d) {
-    console.warn(`${MODULE_ID} | diceSoNiceReady fired but game.dice3d is missing. Cannot install wraps.`);
+    console.warn(`${MODULE_ID} | diceSoNiceReady fired but game.dice3d is missing. Cannot install wrap.`);
     return;
   }
 
-  // Wrap both DSN entry points. CPR uses showForRoll today; show is wrapped as
-  // defence in depth for any caller that uses the lower-level entry point.
-  for (const path of ["game.dice3d.showForRoll", "game.dice3d.show"]) {
-    try {
-      libWrapper.register(
-        MODULE_ID,
-        path,
-        async function (wrapped, ...args) {
-          // Fast paths: feature off, wrong system → straight through.
-          if (!game.settings.get(MODULE_ID, "enabled")) return wrapped.apply(this, args);
-          if (game.system.id !== TARGET_SYSTEM)         return wrapped.apply(this, args);
+  try {
+    libWrapper.register(
+      MODULE_ID,
+      "game.dice3d.showForRoll",
+      async function (wrapped, ...args) {
+        // Fast paths: feature off, wrong system → straight through.
+        if (!game.settings.get(MODULE_ID, "enabled")) return wrapped.apply(this, args);
+        if (game.system.id !== TARGET_SYSTEM)         return wrapped.apply(this, args);
 
-          // Inspect the JS call stack at THIS frame. If any of the initiative
-          // markers appear, this DSN call originated from CPR's initiative
-          // pipeline → suppress.
-          const stack = new Error().stack || "";
-          if (INIT_STACK_MARKERS.some((m) => stack.includes(m))) {
-            // DSN convention: returning false signals "did not animate".
-            // CPR's DiceHandler awaits the result but doesn't act on it.
-            return false;
-          }
+        // CRITICAL: if messageID is set, this call comes from DSN's own
+        // renderRolls() driven by createChatMessage. DSN has already marked
+        // the chat card as animating and added `dsn-hide`. We MUST let this
+        // through so DSN's reveal callback fires. Returning false here would
+        // leave the chat card invisible forever.
+        // showForRoll signature: (roll, user, synchronize, users, blind, messageID, speaker, options)
+        const messageID = args[5];
+        if (messageID != null) return wrapped.apply(this, args);
 
-          return wrapped.apply(this, args);
-        },
-        "MIXED"
-      );
-    } catch (err) {
-      console.error(`${MODULE_ID} | Failed to register wrap on ${path}:`, err);
-    }
+        // No messageID = direct call (CPR's DiceHandler._passRoll, or anything
+        // else calling showForRoll directly). Check the stack: if this is part
+        // of an initiative pipeline, suppress.
+        const stack = new Error().stack || "";
+        if (INIT_MARKER.test(stack)) {
+          return false;  // DSN convention: did not animate
+        }
+
+        return wrapped.apply(this, args);
+      },
+      "MIXED"
+    );
+
+    console.log(`${MODULE_ID} | v0.2.2 active — CPR initiative DSN animation suppressed (chat cards unaffected).`);
+  } catch (err) {
+    console.error(`${MODULE_ID} | Failed to register wrap on game.dice3d.showForRoll:`, err);
   }
-
-  console.log(`${MODULE_ID} | v0.2.1 active — CPR initiative DSN animation suppressed.`);
 });
